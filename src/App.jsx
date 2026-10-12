@@ -49,18 +49,18 @@ import {
 const APARTMENTS = [
   { name: "Darien Max", category: "3-Bedroom" },
   { name: "Streamwood Max", category: "3-Bedroom" },
-  { name: "Countryside Max", category: "3-Bedroom" },
   { name: "Westmont Max", category: "3-Bedroom" },
+  { name: "Countryside Max", category: "3-Bedroom" },
   { name: "Darien", category: "2-Bedroom" },
   { name: "Streamwood", category: "2-Bedroom" },
   { name: "Westmont", category: "2-Bedroom" },
-  { name: "Darien Studio", category: "Studio" },
-  { name: "Streamwood Studiox", category: "Studio" },
-  { name: "Countryside Studio", category: "Studio" },
-  { name: "Clarendon Hills Studio", category: "Studio" },
+  { name: "Clarendon Hills Studio", category: "1-Bedroom" },
+  { name: "Darien Studio", category: "1-Bedroom" },
+  { name: "Streamwood Studio", category: "1-Bedroom" },
+  { name: "Westmont Studio", category: "1-Bedroom" },
 ];
 
-const CATEGORY_ORDER = ["3-Bedroom", "2-Bedroom", "Studio"];
+const CATEGORY_ORDER = ["3-Bedroom", "2-Bedroom", "1-Bedroom"];
 const CATALOG_KEY = "ma-apartment-catalog-v1";
 const GALLERY_DB_NAME = "ma-luxury-gallery-v1";
 const GALLERY_STORE_NAME = "images";
@@ -96,16 +96,16 @@ const DEFAULT_IMAGE_POOL = [
 
 const DEFAULT_PRICES = {
   "Darien Max": 130000,
-  "Streamwood Max": 130000,
-  "Countryside Max": 180000,
+  "Streamwood Max": 13000,
   "Westmont Max": 150000,
-  Darien: 100000,
-  Streamwood: 100000,
-  Westmont: 120000,
-  "Darien Studio": 50000,
-  "Streamwood Studiox": 60000,
-  "Westmont Studio": 70000,
+  "Countryside Max": 180000,
+  "Darien ": 100000,
+  "Streamwood ": 100000,
+  "Westmont ": 120000,
   "Clarendon Hills Studio": 50000,
+  "Darien Studio": 50000,
+  "Streamwood Studio": 60000,
+  "Westmont Studio": 70000,
 };
 
 function createDefaultCatalog() {
@@ -258,7 +258,9 @@ function getStoredSupabaseSession() {
   try {
     const raw = window.localStorage.getItem(SUPABASE_AUTH_STORAGE_KEY);
     return raw ? JSON.parse(raw) : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 function setSupabaseSession(session) {
@@ -295,7 +297,10 @@ async function signOutAdmin() {
   const token = getSupabaseAccessToken();
   if (supabaseConfigured() && token) {
     try {
-      await fetch(`${SUPABASE_URL}/auth/v1/logout`, { method: "POST", headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` } });
+      await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      });
     } catch {}
   }
   setSupabaseSession(null);
@@ -379,7 +384,7 @@ async function supabaseRequest(table, options = {}) {
 
 async function loadBookingsFromSupabase() {
   const rows = await supabaseRequest(SUPABASE_BOOKINGS_TABLE, { query: "?select=*&order=created_at.desc" });
-  return Array.isArray(rows) ? rows.map((row) => ({ ...row, id: row.id, guestName: row.guest_name ?? row.guestName ?? "", checkin: row.checkin, checkout: row.checkout, createdAt: row.created_at ?? row.createdAt, guests: Number(row.guests) || 1 })) : null;
+  return Array.isArray(rows) ? rows.map((row) => ({ ...row, id: row.id, guestName: row.guest_name ?? row.guestName ?? "", legalIdType: row.legal_id_type ?? row.legalIdType ?? "", legalIdNumber: row.legal_id_number ?? row.legalIdNumber ?? "", checkin: row.checkin, checkout: row.checkout, createdAt: row.created_at ?? row.createdAt, guests: Number(row.guests) || 1 })) : null;
 }
 
 async function loadBlocksFromSupabase() {
@@ -394,8 +399,8 @@ async function loadSettingsFromSupabase() {
 }
 
 function bookingToSupabaseRow(booking) {
-  const { guestName, createdAt, ...rest } = booking;
-  return { ...rest, guest_name: guestName, created_at: createdAt || new Date().toISOString() };
+  const { guestName, createdAt, legalIdType, legalIdNumber, ...rest } = booking;
+  return { ...rest, guest_name: guestName, legal_id_type: legalIdType || null, legal_id_number: legalIdNumber || null, created_at: createdAt || new Date().toISOString() };
 }
 
 async function insertBookingToSupabase(booking) {
@@ -646,7 +651,7 @@ export default function App() {
     try { return window.localStorage.getItem(THEME_KEY) || "dark"; } catch { return "dark"; }
   });
 
-  // Favicon placeholder. Replace /favicon-placeholder.svg in /public later with the real icon.
+  // Animated MA Luxury favicon.
   useEffect(() => {
     let favicon = document.querySelector('link[data-ma-favicon="true"]');
     if (!favicon) {
@@ -656,7 +661,7 @@ export default function App() {
       document.head.appendChild(favicon);
     }
     favicon.type = "image/svg+xml";
-    favicon.href = "/images/favicon-placeholder.svg";
+    favicon.href = "/favicon.svg";
   }, []);
   const [lastSync, setLastSync] = useState(null);
   const [toast, setToast] = useState(null);
@@ -739,9 +744,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    refreshData(false);
-    const interval = window.setInterval(() => refreshData(true), SYNC_INTERVAL_MS);
-    return () => window.clearInterval(interval);
+    let mounted = true;
+    (async () => {
+      try {
+        await refreshData(false);
+      } catch (error) {
+        console.error("Initial MA Luxury data load failed:", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    })();
+    const interval = window.setInterval(() => {
+      refreshData(true).catch((error) => console.warn("Background sync skipped:", error));
+    }, SYNC_INTERVAL_MS);
+    return () => {
+      mounted = false;
+      window.clearInterval(interval);
+    };
   }, [refreshData]);
 
   const persistBookings = useCallback(
@@ -803,6 +822,8 @@ export default function App() {
       />
 
       {(tab === "book" || tab === "search") && <WhatsAppButton />}
+
+      <MobileBottomNav tab={tab} setTab={setTab} adminUnlocked={adminUnlocked} />
 
       <main className="ma-main">
         {loading ? (
@@ -958,7 +979,7 @@ function TopBar({ tab, setTab, lastSync, onSync, theme, setTheme, adminUnlocked,
   return (
     <header className="ma-topbar no-print">
       <div className="ma-brand">
-        <div className="ma-brand-mark">MA</div>
+        <div className="ma-brand-mark"><img src="images/favicon-32x32.png" alt="MA Luxury Apartments" /></div>
         <div><div className="ma-brand-name">MA Luxury Apartments</div><div className="ma-brand-sub">Private residence · booking operations</div></div>
       </div>
       <nav className="ma-nav" aria-label="Primary navigation">
@@ -979,6 +1000,48 @@ function WhatsAppButton() {
   return <a className="ma-whatsapp-fab" href={href} target="_blank" rel="noreferrer" aria-label="Contact MA Luxury Apartments on WhatsApp"><MessageCircle size={22} /><span>Chat with us</span></a>;
 }
 
+function MobileBottomNav({ tab, setTab, adminUnlocked }) {
+  const items = adminUnlocked
+    ? [
+        { id: "admin", label: "Home", icon: LayoutDashboard },
+        { id: "calendar", label: "Calendar", icon: CalendarDays },
+        { id: "book", label: "Guest", icon: Building2 },
+      ]
+    : [
+        { id: "book", label: "Home", icon: Building2 },
+        { id: "search", label: "Explore", icon: Search },
+        { id: "admin", label: "Admin", icon: LayoutDashboard },
+      ];
+
+  return (
+    <nav className="ma-mobile-nav no-print" aria-label="Mobile navigation">
+      <div className="ma-mobile-nav-inner">
+        {items.map((item) => {
+          const Icon = item.icon;
+          const active = tab === item.id;
+          return (
+            <button key={item.id} className={`ma-mobile-nav-item ${active ? "active" : ""}`} onClick={() => setTab(item.id)} aria-current={active ? "page" : undefined}>
+              <span className="ma-mobile-nav-icon"><Icon size={18} strokeWidth={active ? 2.1 : 1.7} /></span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+        <button className="ma-mobile-nav-item ma-mobile-nav-more" onClick={() => {
+          if (adminUnlocked) {
+            setTab("book");
+            window.dispatchEvent(new Event("ma-exit-admin"));
+          } else {
+            setTab("admin");
+          }
+        }} aria-label={adminUnlocked ? "Return to guest space" : "Open admin"}>
+          <span className="ma-mobile-nav-icon ma-mobile-nav-brand">MA</span>
+          <span>{adminUnlocked ? "Guest" : "Menu"}</span>
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 function Footer() {
   return (
     <footer className="ma-footer">
@@ -994,7 +1057,9 @@ function Footer() {
 const BOOKING_STEPS = [
   { key: "guestName", label: "What’s your full name?", hint: "We’ll put this name on your reservation.", type: "text", placeholder: "Type your full name…" },
   { key: "phone", label: "What’s the best number to reach you?", hint: "We’ll use it for arrival updates and booking contact.", type: "tel", placeholder: "+234 801 234 5678" },
-  { key: "email", label: "What’s the best email for your reservation?", hint: "We’ll use it for your confirmation and stay details.", type: "email", placeholder: "you@example.com" },
+  { key: "email", label: "What’s the best email for your reservation?", hint: "We’ll use it for your reservation and stay details.", type: "email", placeholder: "you@example.com" },
+  { key: "legalIdType", label: "What legal ID will you provide?", hint: "Select a government-issued identification document.", type: "legal-id-type" },
+  { key: "legalIdNumber", label: "Enter your legal ID number.", hint: "Your ID is collected for reservation and identity checks.", type: "text", placeholder: "Enter your ID number…" },
   { key: "apartment", label: "Which apartment would you like?", hint: "Choose the space that feels right for your stay.", type: "select" },
   { key: "checkin", label: "When would you like to check in?", hint: "Choose the first night of your stay.", type: "date" },
   { key: "checkout", label: "And when would you like to check out?", hint: "Your check-out date must be after check-in.", type: "date" },
@@ -1007,6 +1072,8 @@ function emptyForm() {
     guestName: "",
     phone: "",
     email: "",
+    legalIdType: "",
+    legalIdNumber: "",
     apartment: "",
     checkin: "",
     checkout: "",
@@ -1014,6 +1081,121 @@ function emptyForm() {
     status: "Confirmed",
     notes: "",
   };
+}
+
+
+function ApartmentPicker({ catalog, value, onChange }) {
+  const [category, setCategory] = useState(() => {
+    const selected = catalog.find((item) => item.name === value);
+    return selected?.category || "3-Bedroom";
+  });
+
+  const categories = ["3-Bedroom", "2-Bedroom", "1-Bedroom"];
+  const options = catalog.filter((item) => item.category === category);
+
+  useEffect(() => {
+    const selected = catalog.find((item) => item.name === value);
+    if (selected && selected.category !== category) setCategory(selected.category);
+  }, [value, catalog]);
+
+  return (
+    <div className="ma-apartment-picker">
+      <div className="ma-picker-tabs" role="tablist" aria-label="Apartment types">
+        {categories.map((item) => (
+          <button
+            key={item}
+            type="button"
+            className={category === item ? "is-active" : ""}
+            onClick={() => setCategory(item)}
+          >
+            <span>{item.replace("-Bedroom", "")}</span>
+            <small>Bedroom{item === "1-Bedroom" ? "" : "s"}</small>
+          </button>
+        ))}
+      </div>
+      <div className="ma-apartment-picker-grid">
+        {options.map((apartment) => {
+          const selected = apartment.name === value;
+          const image = apartment.images?.[0] || DEFAULT_IMAGE_POOL[0];
+          return (
+            <button
+              key={apartment.name}
+              type="button"
+              className={`ma-apartment-option ${selected ? "is-selected" : ""}`}
+              onClick={() => onChange(apartment.name)}
+              aria-pressed={selected}
+            >
+              <span className="ma-apartment-option-image">
+                <img src={image} alt="" />
+                <span className="ma-apartment-option-badge">{selected ? "SELECTED" : apartment.category}</span>
+              </span>
+              <span className="ma-apartment-option-copy">
+                <strong>{apartment.name.replace(" Studio", "")}</strong>
+                <span>{apartment.name.includes("Studio") ? "Private studio residence" : apartment.description}</span>
+                <b>{formatMoney(apartment.price)} <small>/ night</small></b>
+              </span>
+              <span className="ma-apartment-option-check"><Check size={15} /></span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function CalendarPicker({ value, onChange, minDate, blockedBefore, label }) {
+  const initial = value ? new Date(`${value}T12:00:00`) : new Date();
+  const [cursor, setCursor] = useState(new Date(initial.getFullYear(), initial.getMonth(), 1));
+  const year = cursor.getFullYear();
+  const month = cursor.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = Array.from({ length: 42 }, (_, index) => {
+    const day = index - firstDay + 1;
+    if (day < 1 || day > daysInMonth) return null;
+    const date = new Date(year, month, day);
+    const iso = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    return { day, iso, date };
+  });
+  const goMonth = (delta) => setCursor(new Date(year, month + delta, 1));
+  const today = todayISO();
+
+  return (
+    <div className="ma-calendar-picker">
+      <div className="ma-calendar-head">
+        <div>
+          <span>{label}</span>
+          <strong>{value ? fmtDate(value) : "Choose a date"}</strong>
+        </div>
+        <div className="ma-calendar-nav">
+          <button type="button" onClick={() => goMonth(-1)} aria-label="Previous month"><ChevronLeft size={16} /></button>
+          <button type="button" onClick={() => goMonth(1)} aria-label="Next month"><ChevronRight size={16} /></button>
+        </div>
+      </div>
+      <div className="ma-calendar-month">{cursor.toLocaleDateString("en-US", { month: "long", year: "numeric" })}</div>
+      <div className="ma-calendar-weekdays">{["S", "M", "T", "W", "T", "F", "S"].map((day, i) => <span key={`${day}-${i}`}>{day}</span>)}</div>
+      <div className="ma-calendar-grid">
+        {cells.map((cell, index) => {
+          if (!cell) return <span key={`empty-${index}`} className="ma-calendar-empty" />;
+          const disabled = cell.iso < (minDate || today) || (blockedBefore && cell.iso <= blockedBefore);
+          const selected = value === cell.iso;
+          const isToday = cell.iso === today;
+          return (
+            <button
+              key={cell.iso}
+              type="button"
+              disabled={disabled}
+              className={`${selected ? "is-selected" : ""} ${isToday ? "is-today" : ""}`}
+              onClick={() => onChange(cell.iso)}
+            >
+              {cell.day}
+            </button>
+          );
+        })}
+      </div>
+      <div className="ma-calendar-foot"><span><i /> Available</span><span><b /> Selected</span></div>
+    </div>
+  );
 }
 
 function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refreshData, showToast }) {
@@ -1030,10 +1212,15 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
   const progress = ((step + 1) / BOOKING_STEPS.length) * 100;
 
   const update = (key, value) => {
-    setForm((previous) => ({ ...previous, [key]: value }));
+    setForm((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
     setAvailability(null);
     setError("");
   };
+
+
 
   const validateStep = () => {
     if (current.key === "guestName" && !form.guestName.trim()) return "Tell us your full name.";
@@ -1042,6 +1229,8 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
       if (!form.email.trim()) return "Enter your email address.";
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return "Enter a valid email address.";
     }
+    if (current.key === "legalIdType" && !form.legalIdType) return "Choose the type of legal ID you will provide.";
+    if (current.key === "legalIdNumber" && !form.legalIdNumber.trim()) return "Enter your legal ID number.";
     if (current.key === "apartment" && !form.apartment) return "Choose an apartment.";
     if (current.key === "checkin") {
       if (!form.checkin) return "Choose a check-in date.";
@@ -1092,7 +1281,7 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
   });
 
   const checkAvailability = async () => {
-    const requiredKeys = ["guestName", "phone", "email", "apartment", "checkin", "checkout", "guests"];
+    const requiredKeys = ["guestName", "phone", "email", "legalIdType", "legalIdNumber", "apartment", "checkin", "checkout", "guests"];
     const missing = requiredKeys.find((key) => {
       if (key === "guests") return !form[key] || Number(form[key]) < 1;
       return !String(form[key] || "").trim();
@@ -1100,7 +1289,7 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
 
     if (missing) {
       const missingStep = BOOKING_STEPS.findIndex((item) => item.key === missing);
-      setStep(missingStep);
+      if (missingStep >= 0) setStep(missingStep);
       setError("Let’s complete that detail first.");
       return;
     }
@@ -1156,7 +1345,9 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
       id: genId(),
       guestName: form.guestName.trim(),
       phone: form.phone.trim(),
-      email: form.email.trim(),
+      email: form.email.trim().toLowerCase(),
+      legalIdType: form.legalIdType,
+      legalIdNumber: form.legalIdNumber.trim(),
       apartment: form.apartment,
       checkin: form.checkin,
       checkout: form.checkout,
@@ -1193,6 +1384,7 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
           <div className="ma-confirmation-details">
             <Detail label="Guest" value={confirmed.guestName} />
             <Detail label="Email" value={confirmed.email} />
+            <Detail label="Legal ID" value={`${confirmed.legalIdType} · ••••${String(confirmed.legalIdNumber || "").slice(-4)}`} />
             <Detail label="Apartment" value={confirmed.apartment} />
             <Detail label="Check-in" value={fmtDate(confirmed.checkin)} />
             <Detail label="Check-out" value={fmtDate(confirmed.checkout)} />
@@ -1241,20 +1433,34 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
       className: "ma-conversation-input",
     };
 
-    if (current.type === "select") {
+
+
+    if (current.type === "legal-id-type") {
       return (
         <select {...common} className="ma-conversation-input ma-conversation-select">
-          <option value="">Choose an apartment…</option>
-          {CATEGORY_ORDER.map((category) => (
-            <optgroup key={category} label={category}>
-              {catalog.filter((a) => a.category === category).map((apartment) => (
-                <option key={apartment.name} value={apartment.name}>
-                  {apartment.name} · {formatMoney(apartment.price)}/night
-                </option>
-              ))}
-            </optgroup>
-          ))}
+          <option value="">Choose an ID type…</option>
+          <option value="National ID">National ID</option>
+          <option value="International Passport">International Passport</option>
+          <option value="Driver's License">Driver's License</option>
+          <option value="Voter's Card">Voter's Card</option>
+          <option value="Other Government-Issued ID">Other Government-Issued ID</option>
         </select>
+      );
+    }
+
+    if (current.type === "select") {
+      return <ApartmentPicker catalog={catalog} value={form.apartment} onChange={(value) => update("apartment", value)} />;
+    }
+
+    if (current.type === "date") {
+      return (
+        <CalendarPicker
+          label={current.key === "checkin" ? "CHECK-IN" : "CHECK-OUT"}
+          value={form[current.key]}
+          minDate={current.key === "checkin" ? todayISO() : addDaysISO(form.checkin || todayISO(), 1)}
+          blockedBefore={current.key === "checkout" ? form.checkin : undefined}
+          onChange={(value) => update(current.key, value)}
+        />
       );
     }
 
@@ -1288,11 +1494,41 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
   return (
     <section className="ma-conversation">
       <div className="ma-conversation-topline">
-        <div className="ma-conversation-brand">MA LUXURY APARTMENTS</div>
+        <div className="ma-conversation-brand"></div>
         <div className="ma-step-count">
           {String(step + 1).padStart(2, "0")} / {String(BOOKING_STEPS.length).padStart(2, "0")}
         </div>
       </div>
+
+      {step === 0 && (
+        <div className="ma-home-hero">
+          <div className="ma-home-hero-copy">
+            <span className="ma-home-pill"><Sparkles size={13} /> PREMIUM SHORT-LET LIVING</span>
+            <h1>Stay somewhere<br /><em>worth remembering.</em></h1>
+            <p>Thoughtfully designed private apartments in Ikeja, made for quiet mornings, beautiful nights and effortless stays.</p>
+            <div className="ma-home-actions">
+              <button className="ma-home-cta" type="button" onClick={() => document.querySelector(".ma-question-card")?.scrollIntoView({ behavior: "smooth", block: "center" })}>Start your booking <ArrowRight size={16} /></button>
+              <span className="ma-home-location"><span className="ma-live-dot" /> Ikeja · Lagos</span>
+            </div>
+          </div>
+          <div className="ma-home-hero-visual">
+            <img src={(catalog.find((item) => item.name === "Darien Max")?.images || DEFAULT_IMAGE_POOL)[0]} alt="MA Luxury apartment" />
+            <div className="ma-home-visual-card"><span>MA LUXURY</span><strong>Private. Refined. Yours.</strong><small>11 Asenuga Street · Opebi</small></div>
+          </div>
+        </div>
+      )}
+
+      {step === 0 && (
+        <div className="ma-feature-strip">
+          {catalog.filter((item) => ["Darien Max", "Westmont", "Darien Studio"].includes(item.name)).map((item) => (
+            <button key={item.name} type="button" onClick={() => { update("apartment", item.name); setStep(6); }} className="ma-feature-card">
+              <img src={item.images?.[0] || DEFAULT_IMAGE_POOL[0]} alt="" />
+              <span><small>{item.category}</small><strong>{item.name.replace(" Studio", "")}</strong><b>{formatMoney(item.price)} <i>/ night</i></b></span>
+              <ArrowRight size={15} />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="ma-conversation-main">
         <div className="ma-conversation-intro">
@@ -1312,6 +1548,7 @@ function BookingTab({ catalog, bookings, blocks, settings, persistBookings, refr
             <span>{current.hint}</span>
           </div>
           <h2>{current.label}</h2>
+          {current.key === "apartment" && form.apartment && <div className="ma-selected-apartment-note"><Check size={13} /> {form.apartment} selected</div>}
           <div className="ma-answer-wrap">
             {renderInput()}
             <button className="ma-next-circle" onClick={goNext} aria-label="Continue">
@@ -1773,7 +2010,7 @@ function AdminTab({ catalog, bookings, blocks, settings, persistBookings, persis
     setImporting(true);
     try {
       const buffer = await file.arrayBuffer(); const workbook = XLSX.read(buffer, { cellDates: true }); const worksheet = workbook.Sheets[workbook.SheetNames[0]]; const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-      const keyMap = { bookingid: "id", id: "id", guestname: "guestName", guest: "guestName", name: "guestName", email: "email", emailaddress: "email", phone: "phone", phonenumber: "phone", apartment: "apartment", unit: "apartment", checkin: "checkin", checkindate: "checkin", checkout: "checkout", checkoutdate: "checkout", nights: "nights", numberofnights: "nights", guests: "guests", numberofguests: "guests", status: "status", bookingstatus: "status", notes: "notes", createdat: "createdAt", datebookingwascreated: "createdAt" };
+      const keyMap = { bookingid: "id", id: "id", guestname: "guestName", guest: "guestName", name: "guestName", email: "email", emailaddress: "email", legalidtype: "legalIdType", legalid: "legalIdNumber", legalidnumber: "legalIdNumber", phone: "phone", phonenumber: "phone", apartment: "apartment", unit: "apartment", checkin: "checkin", checkindate: "checkin", checkout: "checkout", checkoutdate: "checkout", nights: "nights", numberofnights: "nights", guests: "guests", numberofguests: "guests", status: "status", bookingstatus: "status", notes: "notes", createdat: "createdAt", datebookingwascreated: "createdAt" };
       const asISO = (value) => { if (!value) return ""; if (value instanceof Date) return toISO(value); const stringValue = String(value).trim(); const date = new Date(stringValue); return Number.isNaN(date.getTime()) ? stringValue : toISO(date); };
       const existingIds = new Set(bookings.map((booking) => booking.id)); const imported = [];
       rows.forEach((row) => {
@@ -1844,7 +2081,7 @@ function AdminTab({ catalog, bookings, blocks, settings, persistBookings, persis
         {showBlockForm && <div className="ma-block-form"><select value={blockForm.apartment} onChange={(e) => setBlockForm((f) => ({ ...f, apartment: e.target.value }))}><option value="">Apartment…</option>{APARTMENTS.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}</select><input type="date" value={blockForm.start} onChange={(e) => setBlockForm((f) => ({ ...f, start: e.target.value }))} /><input type="date" value={blockForm.end} onChange={(e) => setBlockForm((f) => ({ ...f, end: e.target.value }))} /><input placeholder="Reason (optional)" value={blockForm.reason} onChange={(e) => setBlockForm((f) => ({ ...f, reason: e.target.value }))} /><button className="ma-btn ma-btn-primary" onClick={addBlock}>Add block</button></div>}
         {blocks.length > 0 && <div className="ma-blocks-list">{blocks.map((block) => <div key={block.id} className="ma-block-chip"><Wrench size={12} />{block.apartment}: {fmtDateShort(block.start)}–{fmtDateShort(block.end)}{block.reason ? ` · ${block.reason}` : ""}<button onClick={() => removeBlock(block.id)} aria-label="Remove block"><X size={12} /></button></div>)}</div>}
         <div className="ma-search-box"><Search size={15} /><input placeholder="Search your reservations by name, phone, apartment, status or booking ID…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>
-        <div className="ma-table-scroll"><table className="ma-table"><thead><tr><th>BOOKING</th><th>YOUR GUEST</th><th>EMAIL</th><th>PHONE</th><th>APARTMENT</th><th>CHECK-IN</th><th>CHECK-OUT</th><th>NIGHTS</th><th>PEOPLE</th><th>STATUS</th><th /></tr></thead><tbody>{filtered.map((booking) => <tr key={booking.id} className={booking.status === "Cancelled" ? "ma-row-cancelled" : ""}><td className="ma-mono">{booking.id}</td><td><strong>{booking.guestName}</strong></td><td>{booking.email || "—"}</td><td>{booking.phone}</td><td>{booking.apartment}</td><td>{fmtDateShort(booking.checkin)}</td><td>{fmtDateShort(booking.checkout)}</td><td>{booking.nights}</td><td>{booking.guests}</td><td><span className={`ma-status-pill ${booking.status === "Cancelled" ? "ma-bad" : booking.status === "Pending" ? "ma-warn2" : "ma-good"}`}>{booking.status}</span></td><td className="ma-row-actions"><button className="ma-icon-btn" onClick={() => setEditing(booking)} title="Edit"><Pencil size={13} /></button>{booking.status !== "Cancelled" && <button className="ma-icon-btn" onClick={() => cancelBooking(booking.id)} title="Cancel"><Ban size={13} /></button>}<button className="ma-icon-btn ma-danger" onClick={() => deleteBooking(booking.id)} title="Delete"><Trash2 size={13} /></button></td></tr>)}{!filtered.length && <tr><td colSpan={11} className="ma-empty-cell">No reservations match your search.</td></tr>}</tbody></table></div>
+        <div className="ma-table-scroll"><table className="ma-table"><thead><tr><th>BOOKING</th><th>YOUR GUEST</th><th>EMAIL</th><th>LEGAL ID</th><th>PHONE</th><th>APARTMENT</th><th>CHECK-IN</th><th>CHECK-OUT</th><th>NIGHTS</th><th>PEOPLE</th><th>STATUS</th><th /></tr></thead><tbody>{filtered.map((booking) => <tr key={booking.id} className={booking.status === "Cancelled" ? "ma-row-cancelled" : ""}><td className="ma-mono">{booking.id}</td><td><strong>{booking.guestName}</strong></td><td>{booking.email || "—"}</td><td>{booking.legalIdType ? `${booking.legalIdType} · ••••${String(booking.legalIdNumber || "").slice(-4)}` : "—"}</td><td>{booking.phone}</td><td>{booking.apartment}</td><td>{fmtDateShort(booking.checkin)}</td><td>{fmtDateShort(booking.checkout)}</td><td>{booking.nights}</td><td>{booking.guests}</td><td><span className={`ma-status-pill ${booking.status === "Cancelled" ? "ma-bad" : booking.status === "Pending" ? "ma-warn2" : "ma-good"}`}>{booking.status}</span></td><td className="ma-row-actions"><button className="ma-icon-btn" onClick={() => setEditing(booking)} title="Edit"><Pencil size={13} /></button>{booking.status !== "Cancelled" && <button className="ma-icon-btn" onClick={() => cancelBooking(booking.id)} title="Cancel"><Ban size={13} /></button>}<button className="ma-icon-btn ma-danger" onClick={() => deleteBooking(booking.id)} title="Delete"><Trash2 size={13} /></button></td></tr>)}{!filtered.length && <tr><td colSpan={12} className="ma-empty-cell">No reservations match your search.</td></tr>}</tbody></table></div>
       </section>
 
       <SettingsPanel settings={settings} persistSettings={persistSettings} showToast={showToast} />
@@ -2236,7 +2473,7 @@ function Field({ label, children, wide = false }) {
 function Style() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;1,500;1,600&display=swap');
 
       .ma-app {
         --ink: #111214; --ink-2: #181a1e; --paper: #f5f1e9; --paper-2: #fcfbf8;
@@ -2355,6 +2592,8 @@ function Style() {
       .ma-hero-line:nth-child(1) { animation-delay:.12s; } .ma-hero-line:nth-child(2) { animation-delay:.25s; }
       @keyframes ma-hero-kicker { from { opacity:0; transform:translateY(8px); letter-spacing:.34em; } to { opacity:1; transform:none; letter-spacing:.18em; } }
       @keyframes ma-hero-line { 0% { opacity:0; transform:translateY(30px); filter:blur(8px); } 70% { opacity:1; filter:blur(0); } 100% { opacity:1; transform:none; filter:blur(0); } }
+      .ma-legal-id-note { max-width:520px; margin:10px auto 0; text-align:center; font-size:11px; line-height:1.6; color:#7f8186; }
+      @keyframes ma-favicon-pulse { 0%,100%{filter:drop-shadow(0 0 0 rgba(199,163,107,0));} 50%{filter:drop-shadow(0 0 5px rgba(199,163,107,.75));} }
       .ma-question-card { animation-duration: .36s; animation-timing-function: cubic-bezier(.22,1,.36,1); }
       .ma-enter-forward { animation-name: ma-slide-forward; } .ma-enter-back { animation-name: ma-slide-back; }
       @keyframes ma-slide-forward { from { opacity: 0; transform: translateY(18px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -2720,6 +2959,138 @@ function Style() {
         .ma-detail span { color:#777; } .ma-detail strong { color:#111; }
         .ma-pay-block { break-inside:avoid; border:1px solid #ddd; background:#faf8f3 !important; }
         .ma-qr { width:130px; height:130px; }
+      }
+\n      /* ==================== MOBILE APP EXPERIENCE ==================== */\n      .ma-mobile-nav { display:none; }\n\n      @media (max-width: 650px) {\n        .ma-app { min-height:100dvh; padding-bottom:78px; background:var(--paper); }\n        .ma-topbar { position:sticky; top:0; min-height:64px; height:64px; padding:10px 16px; border-bottom:1px solid rgba(198,163,107,.22); box-shadow:0 8px 30px rgba(0,0,0,.10); backdrop-filter:blur(18px); z-index:60; }\n        .ma-brand { min-width:0; gap:9px; flex:1; }\n        .ma-brand-mark { width:34px; height:34px; border-radius:11px; background:rgba(198,163,107,.10); font-size:13px; }\n        .ma-brand-name { font-size:14px; white-space:nowrap; }\n        .ma-brand-sub { font-size:7px; letter-spacing:.12em; }\n        .ma-nav, .ma-topbar-actions { display:none !important; }\n        .ma-main { width:100%; max-width:none; margin:0; padding:14px 14px 28px; }\n        .ma-conversation { min-height:calc(100dvh - 64px); margin:-14px -14px -28px; padding:22px 16px 34px; border-radius:0; background:linear-gradient(180deg, var(--ink-2) 0%, var(--ink) 100%); }\n        .ma-theme-light .ma-conversation { background:linear-gradient(180deg, #f8f4ec 0%, #eee8dd 100%); }\n        .ma-conversation-intro h1 { font-size:38px; line-height:1.02; letter-spacing:-.035em; }\n        .ma-conversation-intro { margin-bottom:24px; }\n        .ma-question-card { border-radius:22px; padding:20px 18px; border-color:rgba(198,163,107,.24); box-shadow:0 20px 50px rgba(0,0,0,.18); }\n        .ma-question-card h2 { font-size:20px; line-height:1.22; }\n        .ma-conversation-input { min-height:60px; height:auto; border-radius:17px; font-size:16px; padding:14px 16px; }\n        .ma-conversation-footer { gap:8px; }\n        .ma-conversation-footer .ma-btn { min-height:50px; border-radius:15px; }\n        .ma-page-shell { width:100%; }\n        .ma-page-hero, .ma-dashboard-heading { padding:4px 2px 16px; gap:12px; }\n        .ma-page-hero h1, .ma-dashboard-heading h1 { font-size:34px; line-height:1.02; letter-spacing:-.035em; }\n        .ma-panel, .ma-section-panel { border-radius:22px; padding:20px 17px; box-shadow:0 12px 35px rgba(0,0,0,.08); }\n        .ma-dashboard-grid, .ma-occupancy-kpis { gap:10px; }\n        .ma-kpi, .ma-stat-tile, .ma-occupancy-stat { border-radius:18px; padding:16px; }\n        .ma-apartment-card, .ma-gallery-card, .ma-hover-card { border-radius:20px; }\n        .ma-search-row { display:grid; grid-template-columns:1fr; gap:10px; }\n        .ma-search-submit { width:100%; min-height:50px; border-radius:15px; }\n        .ma-availability-side { gap:10px; }\n        .ma-availability-card { border-radius:24px; padding:22px 18px; }\n        .ma-confirmation-screen { min-height:calc(100dvh - 150px); }\n        .ma-confirmation-card { border-radius:24px; padding:30px 18px; }\n        .ma-confirmation-card h1 { font-size:34px; }\n        .ma-modal-backdrop { padding:12px; }\n        .ma-modal { border-radius:22px; padding:20px 16px; max-height:90dvh; }\n        .ma-actions { width:100%; }\n        .ma-actions .ma-btn { flex:1; min-height:48px; border-radius:14px; }\n        .ma-whatsapp-fab { right:16px; bottom:92px; width:48px; height:48px; padding:0; border-radius:50%; display:grid; place-items:center; box-shadow:0 12px 28px rgba(0,0,0,.22); z-index:45; }\n        .ma-whatsapp-fab span { display:none; }\n        .ma-footer { display:none; }\n        .ma-mobile-nav { display:block; position:fixed; left:10px; right:10px; bottom:10px; z-index:100; padding:7px; border:1px solid rgba(198,163,107,.25); border-radius:23px; background:rgba(17,18,20,.94); box-shadow:0 18px 50px rgba(0,0,0,.30); backdrop-filter:blur(22px); }\n        .ma-theme-light .ma-mobile-nav { background:rgba(255,253,248,.96); border-color:#d8d0c2; box-shadow:0 18px 50px rgba(35,29,20,.16); }\n        .ma-mobile-nav-inner { display:grid; grid-template-columns:repeat(4,1fr); align-items:end; gap:3px; }\n        .ma-mobile-nav-item { min-width:0; min-height:54px; padding:5px 3px; border:0; background:transparent; color:#8e9096; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; border-radius:17px; font-size:8px; letter-spacing:.03em; transition:.2s ease; }\n        .ma-mobile-nav-item.active { color:#fff8ed; background:rgba(198,163,107,.13); }\n        .ma-theme-light .ma-mobile-nav-item { color:#77736b; }\n        .ma-theme-light .ma-mobile-nav-item.active { color:#1a1a18; background:#eee6d8; }\n        .ma-mobile-nav-icon { width:28px; height:28px; display:grid; place-items:center; border-radius:10px; }\n        .ma-mobile-nav-item.active .ma-mobile-nav-icon { color:var(--brass); }\n        .ma-mobile-nav-brand { border:1px solid var(--brass); color:var(--brass) !important; font-family:'Playfair Display',serif; font-size:8px; letter-spacing:.08em; }\n        .ma-mobile-nav-more { margin-top:-9px; }\n        .ma-mobile-nav-more .ma-mobile-nav-icon { width:43px; height:43px; border-radius:50%; background:var(--brass); color:#171717 !important; border:4px solid var(--ink-2); box-shadow:0 8px 22px rgba(198,163,107,.25); }\n        .ma-theme-light .ma-mobile-nav-more .ma-mobile-nav-icon { border-color:#fffdf8; }\n      }\n
+
+
+      /* ==================== PREMIUM BLACK / NEON GUEST UI ==================== */
+      .ma-app { --ma-neon:#F9FF21; --ma-black:#070705; --ma-charcoal:#1B1B19; --ma-white:#F7F7F2; --ma-muted:#9A9A92; }
+      .ma-app .ma-conversation { background:var(--ma-black); color:var(--ma-white); font-family:'DM Sans',Inter,Arial,sans-serif; }
+      .ma-app .ma-conversation::before { width:900px; height:900px; top:-420px; right:-300px; background:radial-gradient(circle, rgba(249,255,33,.09), transparent 64%); }
+      .ma-app .ma-conversation-intro h1 { font-family:'Inter',Arial,sans-serif; font-weight:500; letter-spacing:-.055em; background:linear-gradient(100deg,#f5f5ef 0%,#9c9c93 100%); -webkit-background-clip:text; background-clip:text; }
+      .ma-app .ma-conversation-intro h1 em { color:var(--ma-neon); -webkit-text-fill-color:var(--ma-neon); font-style:normal; }
+      .ma-app .ma-conversation-brand,.ma-app .ma-eyebrow { color:var(--ma-neon); }
+      .ma-app .ma-step-count,.ma-app .ma-question-meta { color:#77776f; }
+      .ma-app .ma-question-card { background:rgba(27,27,25,.82); border:1px solid rgba(255,255,255,.08); border-radius:24px; box-shadow:0 30px 90px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.04); padding:30px; backdrop-filter:blur(18px); }
+      .ma-app .ma-question-card h2 { color:#f1f1eb; font-weight:500; }
+      .ma-app .ma-conversation-input { background:#10100e; color:#f5f5ef; border-color:#2d2d29; border-radius:16px; }
+      .ma-app .ma-conversation-input:focus { border-color:rgba(249,255,33,.7); box-shadow:0 0 0 4px rgba(249,255,33,.08); }
+      .ma-app .ma-next-circle { background:var(--ma-neon); border-color:var(--ma-neon); color:#070705; box-shadow:0 8px 28px rgba(249,255,33,.15); }
+      .ma-app .ma-next-circle:hover { transform:translateX(3px) scale(1.04); }
+      .ma-app .ma-progress-track { background:#242420; height:4px; border-radius:999px; }
+      .ma-app .ma-progress-fill { background:var(--ma-neon); border-radius:999px; box-shadow:0 0 18px rgba(249,255,33,.28); }
+      .ma-app .ma-review-dock { background:rgba(27,27,25,.92); border-color:#30302b; border-radius:20px; }
+      .ma-app .ma-btn-primary { background:var(--ma-neon); color:#070705; border-color:var(--ma-neon); font-weight:700; border-radius:12px; box-shadow:0 12px 30px rgba(249,255,33,.12); }
+      .ma-app .ma-btn-primary:hover:not(:disabled) { background:#ffff5a; color:#070705; transform:translateY(-2px); }
+      .ma-app .ma-btn-ghost { color:#f5f5ef; border-color:#373731; background:#11110f; border-radius:12px; }
+      .ma-app .ma-btn-ghost:hover:not(:disabled) { border-color:var(--ma-neon); }
+
+      .ma-home-hero { width:min(1180px,100%); margin:14px auto 38px; display:grid; grid-template-columns:1.08fr .92fr; gap:34px; align-items:end; position:relative; z-index:2; }
+      .ma-home-hero-copy { padding:20px 0 0 4px; }
+      .ma-home-pill { display:inline-flex; align-items:center; gap:7px; padding:8px 11px; border:1px solid rgba(249,255,33,.22); border-radius:999px; color:#dcdcce; background:rgba(249,255,33,.05); font-size:9px; letter-spacing:.14em; }
+      .ma-home-hero h1 { margin:18px 0 16px; font-family:'Inter',Arial,sans-serif; font-size:clamp(48px,6.5vw,88px); line-height:.9; letter-spacing:-.07em; color:#f8f8f3; font-weight:500; }
+      .ma-home-hero h1 em { color:var(--ma-neon); font-style:normal; }
+      .ma-home-hero p { max-width:560px; margin:0; color:#9b9b93; font-size:14px; line-height:1.7; }
+      .ma-home-actions { display:flex; align-items:center; gap:18px; margin-top:24px; }
+      .ma-home-cta { display:inline-flex; align-items:center; gap:10px; border:0; border-radius:999px; padding:14px 18px; background:var(--ma-neon); color:#070705; font-weight:700; cursor:pointer; box-shadow:0 16px 34px rgba(249,255,33,.12); }
+      .ma-home-cta:hover { transform:translateY(-2px); box-shadow:0 20px 40px rgba(249,255,33,.18); }
+      .ma-home-location { color:#85857d; font-size:11px; display:inline-flex; align-items:center; gap:7px; }
+      .ma-live-dot { width:7px; height:7px; border-radius:50%; background:var(--ma-neon); box-shadow:0 0 10px rgba(249,255,33,.65); }
+      .ma-home-hero-visual { position:relative; min-height:360px; border-radius:28px; overflow:hidden; border:1px solid rgba(255,255,255,.09); background:#151513; box-shadow:0 30px 100px rgba(0,0,0,.42); }
+      .ma-home-hero-visual::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg,transparent 35%,rgba(7,7,5,.9) 100%); pointer-events:none; }
+      .ma-home-hero-visual img { width:100%; height:100%; min-height:360px; object-fit:cover; display:block; filter:saturate(.78) contrast(1.03); }
+      .ma-home-visual-card { position:absolute; z-index:1; left:20px; right:20px; bottom:18px; display:grid; gap:4px; }
+      .ma-home-visual-card span { color:var(--ma-black); font-size:8px; letter-spacing:.2em; }
+      .ma-home-visual-card strong { color:#fff; font-size:21px; font-weight:500; }
+      .ma-home-visual-card small { color:#aaa99f; font-size:10px; }
+      .ma-feature-strip { width:min(1180px,100%); margin:0 auto 42px; display:grid; grid-template-columns:repeat(3,1fr); gap:10px; position:relative; z-index:2; }
+      .ma-feature-card { min-height:82px; padding:7px; border:1px solid #282824; border-radius:18px; background:#11110f; color:#fff; display:grid; grid-template-columns:72px 1fr auto; gap:12px; align-items:center; text-align:left; cursor:pointer; transition:.25s ease; }
+      .ma-feature-card:hover { border-color:rgba(249,255,33,.55); transform:translateY(-3px); }
+      .ma-feature-card img { width:72px; height:68px; object-fit:cover; border-radius:13px; }
+      .ma-feature-card span { min-width:0; display:grid; gap:2px; }
+      .ma-feature-card small { color:#77776f; text-transform:uppercase; font-size:8px; letter-spacing:.13em; }
+      .ma-feature-card strong { color:#f3f3ee; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .ma-feature-card b { color:var(--ma-neon); font-size:10px; font-weight:600; }
+      .ma-feature-card i { color:#77776f; font-style:normal; font-weight:400; }
+      .ma-feature-card > svg { color:#77776f; }
+
+      .ma-apartment-picker { width:100%; }
+      .ma-picker-tabs { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 16px; }
+      .ma-picker-tabs button { border:1px solid #30302b; border-radius:13px; background:#11110f; color:#898981; padding:11px 8px; display:flex; flex-direction:column; align-items:center; gap:2px; cursor:pointer; transition:.2s ease; }
+      .ma-picker-tabs button span { font-size:13px; font-weight:700; color:inherit; }
+      .ma-picker-tabs button small { font-size:8px; text-transform:uppercase; letter-spacing:.12em; }
+      .ma-picker-tabs button:hover { border-color:#5b5b4f; color:#fff; }
+      .ma-picker-tabs button.is-active { background:var(--ma-neon); color:#070705; border-color:var(--ma-neon); box-shadow:0 10px 26px rgba(249,255,33,.11); }
+      .ma-picker-tabs button.is-active span,.ma-picker-tabs button.is-active small { color:#070705; }
+      .ma-apartment-picker-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+      .ma-apartment-option { position:relative; overflow:hidden; display:grid; grid-template-columns:112px 1fr 26px; gap:13px; align-items:center; min-height:112px; padding:8px; text-align:left; border:1px solid #2d2d29; border-radius:17px; background:#10100e; color:#f5f5ef; cursor:pointer; transition:.24s ease; }
+      .ma-apartment-option:hover { border-color:#6b6b5a; transform:translateY(-2px); }
+      .ma-apartment-option.is-selected { border-color:var(--ma-neon); background:linear-gradient(145deg,#171714,#10100e); box-shadow:0 12px 34px rgba(249,255,33,.08); }
+      .ma-apartment-option-image { position:relative; height:94px; overflow:hidden; border-radius:12px; }
+      .ma-apartment-option-image img { width:100%; height:100%; object-fit:cover; display:block; }
+      .ma-apartment-option-badge { position:absolute; left:6px; bottom:6px; padding:4px 6px; border-radius:999px; background:rgba(7,7,5,.72); color:#fff; font-size:6px; letter-spacing:.12em; }
+      .ma-apartment-option.is-selected .ma-apartment-option-badge { background:var(--ma-neon); color:#070705; }
+      .ma-apartment-option-copy { display:grid; gap:4px; min-width:0; }
+      .ma-apartment-option-copy strong { font-size:16px; font-weight:600; }
+      .ma-apartment-option-copy span { color:#85857d; font-size:9px; line-height:1.4; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+      .ma-apartment-option-copy b { color:var(--ma-neon); font-size:11px; }
+      .ma-apartment-option-copy b small { color:#73736b; font-weight:400; }
+      .ma-apartment-option-check { width:26px; height:26px; display:grid; place-items:center; border:1px solid #3b3b34; border-radius:50%; color:#65655d; }
+      .ma-apartment-option.is-selected .ma-apartment-option-check { background:var(--ma-neon); border-color:var(--ma-neon); color:#070705; }
+      .ma-selected-apartment-note { display:flex; align-items:center; justify-content:center; gap:6px; margin:-6px 0 14px; color:var(--ma-neon); font-size:10px; }
+
+      .ma-calendar-picker { border:1px solid #2d2d29; border-radius:20px; background:#10100e; padding:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,.03); }
+      .ma-calendar-head { display:flex; justify-content:space-between; align-items:center; gap:15px; padding:2px 2px 12px; }
+      .ma-calendar-head div:first-child { display:grid; gap:3px; text-align:left; }
+      .ma-calendar-head span { color:#6f6f68; font-size:8px; letter-spacing:.15em; }
+      .ma-calendar-head strong { color:#f5f5ef; font-size:15px; font-weight:600; }
+      .ma-calendar-nav { display:flex; gap:6px; }
+      .ma-calendar-nav button { width:32px; height:32px; display:grid; place-items:center; border:1px solid #34342f; border-radius:10px; background:#181815; color:#a3a39a; cursor:pointer; }
+      .ma-calendar-nav button:hover { border-color:var(--ma-neon); color:var(--ma-neon); }
+      .ma-calendar-month { padding:11px 2px 10px; color:#f3f3ed; font-size:13px; font-weight:600; }
+      .ma-calendar-weekdays,.ma-calendar-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:5px; }
+      .ma-calendar-weekdays span { text-align:center; color:#5f5f58; font-size:8px; padding:5px 0; }
+      .ma-calendar-grid button,.ma-calendar-empty { aspect-ratio:1; min-width:0; border-radius:10px; }
+      .ma-calendar-grid button { border:1px solid transparent; background:transparent; color:#d9d9d2; cursor:pointer; font-size:11px; }
+      .ma-calendar-grid button:hover:not(:disabled) { background:#20201c; border-color:#414139; color:#fff; }
+      .ma-calendar-grid button.is-today { color:var(--ma-neon); font-weight:700; }
+      .ma-calendar-grid button.is-selected { background:var(--ma-neon); color:#070705; border-color:var(--ma-neon); font-weight:800; box-shadow:0 6px 18px rgba(249,255,33,.18); }
+      .ma-calendar-grid button:disabled { color:#393934; cursor:not-allowed; }
+      .ma-calendar-foot { display:flex; gap:15px; padding:12px 2px 0; color:#6d6d65; font-size:8px; }
+      .ma-calendar-foot span { display:inline-flex; align-items:center; gap:5px; }
+      .ma-calendar-foot i,.ma-calendar-foot b { width:7px; height:7px; border-radius:50%; display:inline-block; background:#42423b; }
+      .ma-calendar-foot b { background:var(--ma-neon); }
+
+      .ma-app .ma-availability-overlay { background:rgba(7,7,5,.86); }
+      .ma-app .ma-availability-card { background:#151513; border-color:#35352e; color:#f5f5ef; }
+      .ma-app .ma-review-summary { border-color:#30302b; background:#30302b; }
+      .ma-app .ma-review-summary span { background:#1b1b19; color:#d7d7d0; }
+
+      @media (max-width: 850px) {
+        .ma-home-hero { grid-template-columns:1fr; gap:18px; }
+        .ma-home-hero-copy { padding-top:0; }
+        .ma-home-hero-visual { min-height:300px; }
+        .ma-home-hero-visual img { min-height:300px; }
+        .ma-feature-strip { grid-template-columns:1fr; }
+        .ma-apartment-picker-grid { grid-template-columns:1fr; }
+      }
+      @media (max-width: 650px) {
+        .ma-home-hero { margin:0 auto 24px; gap:16px; }
+        .ma-home-hero h1 { font-size:48px; }
+        .ma-home-hero p { font-size:12px; }
+        .ma-home-hero-visual { min-height:260px; border-radius:22px; }
+        .ma-home-hero-visual img { min-height:260px; }
+        .ma-feature-strip { margin-bottom:28px; }
+        .ma-feature-card { grid-template-columns:60px 1fr auto; min-height:72px; }
+        .ma-feature-card img { width:60px; height:58px; }
+        .ma-question-card { padding:18px 14px; }
+        .ma-apartment-option { grid-template-columns:82px 1fr 25px; min-height:98px; }
+        .ma-apartment-option-image { height:82px; }
+        .ma-apartment-option-copy strong { font-size:14px; }
+        .ma-apartment-option-copy span { font-size:8px; }
+        .ma-picker-tabs button span { font-size:11px; }
+        .ma-picker-tabs button small { font-size:7px; }
+        .ma-calendar-picker { padding:12px; }
       }
     `}</style>
   );
