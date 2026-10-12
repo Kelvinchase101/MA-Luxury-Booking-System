@@ -1765,7 +1765,7 @@ function AdminTab({ catalog, bookings, blocks, settings, persistBookings, persis
   const removeBlock = async (id) => { await persistBlocks(blocks.filter((block) => block.id !== id)); showToast("Maintenance block removed."); };
 
   const exportExcel = () => {
-    const rows = bookings.map((booking) => ({ "Booking ID": booking.id, "Guest Name": booking.guestName, Email: booking.email, Phone: booking.phone, Apartment: booking.apartment, "Check-in": booking.checkin, "Check-out": booking.checkout, Nights: booking.nights, Guests: booking.guests, Status: booking.status, Notes: booking.notes, "Created At": booking.createdAt }));
+    const rows = bookings.map((booking) => ({ "Booking ID": booking.id, "Guest Name": booking.guestName, Email: booking.email, "Legal ID Type": booking.legalIdType, "Legal ID": booking.legalIdNumber ? `••••${String(booking.legalIdNumber).slice(-4)}` : "", Phone: booking.phone, Apartment: booking.apartment, "Check-in": booking.checkin, "Check-out": booking.checkout, Nights: booking.nights, Guests: booking.guests, Status: booking.status, Notes: booking.notes, "Created At": booking.createdAt }));
     const worksheet = XLSX.utils.json_to_sheet(rows); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, "Bookings"); XLSX.writeFile(workbook, `MA-Luxury-Bookings-${today}.xlsx`);
   };
 
